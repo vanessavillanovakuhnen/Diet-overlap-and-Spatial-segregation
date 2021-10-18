@@ -1,0 +1,150 @@
+---
+editor_options: 
+  markdown: 
+    wrap: 100
+chunk_output_type: console
+  pdf_document: 
+---
+
+# Isotopic analysis
+
+------------------------------------------------------------------------
+
+*ATENÇÃO!!!!*
+
+O cálculo da elipse, assim como as métricas de estrutura trófica foram todos calculados a partir do pacote SIAR. Porém este pacote não existe mais e consequentemente o código não irá rodar.
+
+Para adaptações o autor sugere os pacotes SIBER e MixSIAR:
+
+-   SIBER: <https://github.com/AndrewLJackson/SIBER>
+
+-   MixSIAR: <https://github.com/brianstock/MixSIAR>
+
+-   SIAR: <https://github.com/AndrewLJackson/siar#siar-v422>
+
+-   <https://besjournals.onlinelibrary.wiley.com/doi/epdf/10.1111/j.1365-2656.2011.01806.x>
+
+-   <http://www.tcd.ie/Zoology/research/research/theoretical/Rpodcastsfiles/siber/siber_ellipses.mp4>
+
+------------------------------------------------------------------------
+
+### 
+
+### Organizando os dados
+
+O arquivo de dados deve ter 3 colunas nomeadas EXATAMENTE como "group", "x", "y", onde x = delta de carbono e Y = delta de nitrogênio.
+
+No meu caso group 1 = Didelphis aurita e group 2 = Metachirus nudicaudatus
+
+```{r}
+mydata <- read.table("dados pro SIBER.txt",sep="\t",header=T)
+
+attach(mydata) # makes the column names availble for direct calling
+```
+
+```{r, results='hide'}
+ngroups <- length(unique(group)) # calcular quantos grupos existem nos dados para serem comparados
+
+unique(group) # aqui mostra quais são os grupos
+
+```
+
+### Plotando os dados e criando as elipses
+
+Chamando o pacote
+
+```{r}
+#install.packages("SIBER") 
+#library(SIBER)
+```
+
+Plotando os dados - Plotar as amostras de cada grupo para depois desenhar a elipse em cima
+
+```{r}
+dev.new()
+plot(x,y,col=group,type="p",pch=19)
+legend("topright",
+       legend=c("D.aurita", "M.nudicaudatus"), 
+       pch=19,col=1:length(unique(group)))
+```
+
+Criando vetores vazios para armazenar as métricas
+
+```{r}
+SEA <- numeric(ngroups) # valor do Standard Elipse Area (SEA)
+
+SEAc <- numeric(ngroups) # Valor do SEA corrigido para pequenas amostras
+
+TA <- numeric(ngroups) # Valor da área total do polígno convexo (convex hull)
+```
+
+Desenhando as elipses:
+
+O for é para repetir para cada grupo. As elipses tracejadas representam a área total (Convex Hull) de cada espécie. As linhas sólidas representam SEAc (corrigido pq amostra é pequena) que representam 40% dos dados (regardless the sample size!!!)
+
+```{r}
+for (j in unique(group)){
+
+
+  # Fit a standard ellipse to the data
+  SE <- standard.ellipse(spx[[j]],spy[[j]],steps=1)
+  
+  # Extract the estimated SEA and SEAc from this object
+  # Os valores calculados ser?o inseridos nos objetos vazios SEA e SEAc que foram criados anteriormente no script
+  SEA[j] <- SE$SEA 
+  SEAc[j] <- SE$SEAc
+  
+  # plot the standard ellipse (i.e. SEAc pq as amostras s?o pequenas!)
+  # These are plotted here as thick solid lines
+  lines(SE$xSEAc,SE$ySEAc,col=j,lty=1,lwd=3)
+  
+  
+  # Also, for comparison we can fit and plot the convex hull
+  # the convex hull is plotted as dotted thin lines  #
+  # Calculate the convex hull for the jth group's isotope values
+  # held in the objects created using split() called spx and spy
+  CH <- convexhull(spx[[j]],spy[[j]])
+  
+  # Extract the area of the convex hull from this object
+  TA[j] <- CH$TA
+  
+  # Plot the convex hull
+  lines(CH$xcoords,CH$ycoords,lwd=1,lty="dotted")
+
+  
+}
+```
+
+Buscando os valores calculados
+
+```{r}
+print(cbind(SEA,SEAc,TA))
+```
+
+Calculando SEA_B
+
+```{r}
+reps <- 10^4 # (pode ser elevado na quinta ou na sexta se quiser dados mais apurados)
+SEA.B <- siber.ellipses(x,y,group,R=reps)
+
+
+# Plotando o intervalo de confiança
+dev.new()
+siardensityplot(SEA.B,
+  xlab="Group",ylab="Area (permil^2)",
+  main="Different estimates of Standard Ellipse Area (SEA)")
+
+# Só para comparar vamos plotar também o valor do SEAc em vermelho
+points(1:ngroups,SEAc,pch=15,col="red")
+legend("topright",c("SEAc"),pch=c(15,17),col=c("red","blue"))
+```
+
+Testando se há diferença significativa:
+
+O comando soma quantas vezes SEA.B do grupo 1 foi menor que do grupo doi e divide pelo n?mero total de repeti??es que tinha sido 10000 (reps \<- 10\^4)). O resultado será a probabilidade do grupo 1 ser menor que o grupo 2. Para ser significativo o resultado tem que ser maior que 0.95
+
+```{r}
+Pg1.lt.g2 <- sum( SEA.B[,1] < SEA.B[,2] ) / nrow(SEA.B) # a área do aurita é menor que meta? 
+Pg2.lt.g1 <- sum( SEA.B[,2] < SEA.B[,1] ) / nrow(SEA.B) # a área do meta é menor que do aurita?
+
+```
